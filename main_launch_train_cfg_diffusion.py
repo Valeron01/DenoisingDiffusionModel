@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import pytorch_lightning.loggers
 import os
 from dataset_builder import build_dataset
-from modules.lit_modules.cfg_diffuion import CFGDiffusion
+from modules.lit_modules.cfg_diffusion import CFGDiffusion
 import argparse
 
 
