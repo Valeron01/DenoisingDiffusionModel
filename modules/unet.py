@@ -1,7 +1,24 @@
+import math
 import typing
 import einops
 import torch
 from torch import nn
+from tqdm import trange
+
+
+class SinusoidalPosEmb(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x):
+        device = x.device
+        half_dim = self.dim // 2
+        emb = math.log(10000) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        emb = x[:, None] * emb[None, :]
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
 
 
 class Downsample(nn.Module):
@@ -48,7 +65,7 @@ class ResidualBlock(nn.Module):
     def forward(self, x, embed=None):
         conv1 = self.conv1(x)
 
-        if embed and self.mlp:
+        if embed is not None and self.mlp is not None:
             embed = self.mlp(embed)[..., None, None]
             scale, shift = torch.chunk(embed, 2, dim=1)
             conv1 = conv1 * (1 + scale) * shift
@@ -83,11 +100,32 @@ class Attention(nn.Module):
 class UNet(nn.Module):
     def __init__(
             self,
+            num_classes: int,
             n_features_list: typing.List or typing.Tuple = (64, 128, 256),
             use_attention_list: typing.List or typing.Tuple = (False, False, True),
             embedding_dim: int = 256,
     ):
         super().__init__()
+        assert len(n_features_list) == len(use_attention_list)
+
+        self.class_embedding = nn.Embedding(num_classes, embedding_dim)
+
+        self.none_class_embedding = nn.Parameter(
+            torch.randn(1, embedding_dim), requires_grad=True
+        )
+        self.time_embed = nn.Sequential(
+            SinusoidalPosEmb(embedding_dim),
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.GELU(),
+            nn.Linear(embedding_dim, embedding_dim),
+        )
+
+        injection_embedding_dim = 2 * embedding_dim
+        self.embedding_proj = nn.Sequential(
+            nn.Linear(injection_embedding_dim, embedding_dim),
+            nn.GELU(),
+            nn.Linear(embedding_dim, embedding_dim)
+        )
         self.n_features_list = n_features_list
         self.use_attention_list = use_attention_list
 
@@ -104,19 +142,19 @@ class UNet(nn.Module):
                 n_features_list[:-1], n_features_list[1:], use_attention_list[:-1]
         ):
             self.encoder.append(nn.ModuleList([
-                ResidualBlock(in_features, out_features, embedding_dim * 2),
-                ResidualBlock(out_features, out_features, embedding_dim * 2),
+                ResidualBlock(in_features, out_features, injection_embedding_dim),
+                ResidualBlock(out_features, out_features, injection_embedding_dim),
                 Attention(out_features, out_features) if use_attention else nn.Identity(),
                 Downsample(out_features, out_features)
             ]))
 
         self.middle_block1 = ResidualBlock(
             in_channels=n_features_list[-1], out_channels=n_features_list[-1],
-            embed_dim=embedding_dim * 2
+            embed_dim=injection_embedding_dim
         )
         self.middle_block2 = ResidualBlock(
             in_channels=n_features_list[-1], out_channels=n_features_list[-1],
-            embed_dim=embedding_dim * 2
+            embed_dim=injection_embedding_dim
         )
         self.middle_attention = Attention(
             in_channels=n_features_list[-1], out_channels=n_features_list[-1]
@@ -128,36 +166,57 @@ class UNet(nn.Module):
         ):
             self.decoder.append(nn.ModuleList([
                 Upsample(in_features, in_features),
-                ResidualBlock(in_features * 2, out_features, embedding_dim * 2),
-                ResidualBlock(out_features, out_features, embedding_dim * 2),
+                ResidualBlock(in_features * 2, out_features, injection_embedding_dim),
+                ResidualBlock(out_features, out_features, injection_embedding_dim),
                 Attention(out_features, out_features) if use_attention else nn.Identity(),
             ]))
 
         self.final_conv = nn.Conv2d(n_features_list[0] * 2, 3, 1)
 
-    def forward(self, x):
+    def forward(self, x, t, classes, class_drop_prob=None):
+        assert (
+                       classes is not None and self.class_embedding is not None
+               ) or classes is None, "Classes is not none, but class embedding is"
         stem = self.stem(x)
+
+        time_embed = self.time_embed(t)
+        class_embed = self.class_embedding(classes)
+        if class_drop_prob:
+            class_drop_mask = torch.rand(x.shape[0], device=x.device) < class_drop_prob
+            class_drop_mask = class_drop_mask[:, None]
+
+            null_classes = torch.tile(self.none_class_embedding, [x.shape[0], 1])
+            class_embed = torch.where(
+                class_drop_mask,
+                null_classes,
+                class_embed
+            )
+
+        full_embedding = torch.cat([time_embed, class_embed], dim=1)
 
         downsample_stage = stem
         downsample_stages = [stem]
         for block1, block2, attention, downsample in self.encoder:
-            downsample_stage = block1(downsample_stage)
-            downsample_stage = block2(downsample_stage)
-            downsample_stage = attention(downsample_stage) + downsample_stage
+            downsample_stage = block1(downsample_stage, full_embedding)
+            downsample_stage = block2(downsample_stage, full_embedding)
+            if isinstance(attention, Attention):
+                downsample_stage = attention(downsample_stage) + downsample_stage
             downsample_stages.append(downsample_stage)
             downsample_stage = downsample(downsample_stage)
 
-        downsample_stage = self.middle_block1(downsample_stage)
-        downsample_stage = self.middle_block2(downsample_stage)
-        downsample_stage = self.middle_attention(downsample_stage) + downsample_stage
+        downsample_stage = self.middle_block1(downsample_stage, full_embedding)
+        downsample_stage = self.middle_block2(downsample_stage, full_embedding)
+        if isinstance(self.middle_attention, Attention):
+            downsample_stage = self.middle_attention(downsample_stage) + downsample_stage
 
         upsample_stage = downsample_stage
         for previous_stage, (upsample, block1, block2, attention) in zip(reversed(downsample_stages), self.decoder):
             upsample_stage = upsample(upsample_stage)
             upsample_stage = torch.cat([upsample_stage, previous_stage], dim=1)
-            upsample_stage = block1(upsample_stage)
-            upsample_stage = block2(upsample_stage)
-            upsample_stage = attention(upsample_stage)
+            upsample_stage = block1(upsample_stage, full_embedding)
+            upsample_stage = block2(upsample_stage, full_embedding)
+            if isinstance(attention, Attention):
+                upsample_stage = attention(upsample_stage)
 
         return self.final_conv(
             torch.cat([upsample_stage, stem], dim=1)
@@ -165,8 +224,11 @@ class UNet(nn.Module):
 
 
 if __name__ == '__main__':
-    noise = torch.randn(1, 3, 256, 256)
+    unet = UNet(num_classes=10, use_attention_list=(True, True, True)).cuda()
 
-    unet = UNet()
-    res = unet(noise)
-    print(res.shape)
+    noise = torch.randn(8, 3, 64, 64).cuda()
+    times = torch.randint(0, 1000, (noise.shape[0],)).cuda()
+    classes = torch.randint(0, 10, (noise.shape[0],)).cuda()
+    res = unet(noise, times, classes, class_drop_prob=0.5)
+    print(res.mean())
+    del res
