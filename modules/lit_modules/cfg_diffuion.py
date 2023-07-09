@@ -13,15 +13,15 @@ class CFGDiffusion(pl.LightningModule):
     def __init__(
             self,
             num_classes: int,
-            n_features_list: typing.List or typing.Tuple = (64, 128, 256),
-            use_attention_list: typing.List or typing.Tuple = (False, True, True),
+            n_features_list: typing.List or typing.Tuple = (64, 128, 256, 256),
+            use_attention_list: typing.List or typing.Tuple = (False, True, True, True),
             embedding_dim: int = 256,
             num_steps: int = 1000,
             ema_beta=0.995,
             ema_update_after_step=100,
             ema_update_every=10,
             class_drop_prob: float = 0.1,
-            lr=5e-4
+            lr=3e-4
     ):
         super().__init__()
         self.lr = lr
