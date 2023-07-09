@@ -109,6 +109,11 @@ class UNet(nn.Module):
         assert len(n_features_list) == len(use_attention_list)
 
         self.class_embedding = nn.Embedding(num_classes, embedding_dim)
+        self.class_embedding_proj = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.GELU(),
+            nn.Linear(embedding_dim, embedding_dim)
+        )
 
         self.none_class_embedding = nn.Parameter(
             torch.randn(1, embedding_dim), requires_grad=True
@@ -121,11 +126,7 @@ class UNet(nn.Module):
         )
 
         injection_embedding_dim = 2 * embedding_dim
-        self.embedding_proj = nn.Sequential(
-            nn.Linear(injection_embedding_dim, embedding_dim),
-            nn.GELU(),
-            nn.Linear(embedding_dim, embedding_dim)
-        )
+
         self.n_features_list = n_features_list
         self.use_attention_list = use_attention_list
 
@@ -191,7 +192,7 @@ class UNet(nn.Module):
                 null_classes,
                 class_embed
             )
-
+        class_embed = self.class_embedding_proj(class_embed)
         full_embedding = torch.cat([time_embed, class_embed], dim=1)
 
         downsample_stage = stem
