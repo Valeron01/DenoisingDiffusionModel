@@ -20,9 +20,11 @@ class CFGDiffusion(pl.LightningModule):
             ema_beta=0.995,
             ema_update_after_step=100,
             ema_update_every=10,
-            class_drop_prob: float = 0.1
+            class_drop_prob: float = 0.1,
+            lr=5e-4
     ):
         super().__init__()
+        self.lr = lr
         self.class_drop_prob = class_drop_prob
         self.num_classes = num_classes
         self.model = UNet(num_classes, n_features_list, use_attention_list, embedding_dim)
@@ -34,7 +36,7 @@ class CFGDiffusion(pl.LightningModule):
         self.save_hyperparameters()
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.model.parameters(), lr=3e-4)
+        return torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
     def training_step(self, batch, *args, **kwargs):
         images, classes = batch
