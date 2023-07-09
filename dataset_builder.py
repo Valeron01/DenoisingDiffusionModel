@@ -33,23 +33,33 @@ class ImagesDataset(torch.utils.data.Dataset):
         return image
 
 
-def get_dataset(images_folder_path, image_size):
-    transforms = al.Sequential([
-        al.Resize(image_size[1], image_size[0]),
-        al.HorizontalFlip(),
-        al.pytorch.ToTensorV2()
-    ])
+class AlbumentationsWrapper:
+    def __init__(self, image_size):
+        self.transforms = al.Sequential([
+            al.Resize(image_size[1], image_size[0]),
+            al.HorizontalFlip(),
+            al.pytorch.ToTensorV2()
+        ])
 
-    def image_transform(x):
-        return transforms(image=x)["image"] / 127.5 - 1
+    def __call__(self, image):
+        return self.transforms(image=image)["image"] / 127.5 - 1
 
-    images_dataset = torchvision.datasets.ImageFolder(images_folder_path, transform=image_transform, loader=cv2.imread)
+
+def build_dataset(images_folder_path, image_size):
+    images_dataset = torchvision.datasets.ImageFolder(
+        images_folder_path, transform=AlbumentationsWrapper(image_size), loader=cv2.imread
+    )
     return images_dataset
 
 
-if __name__ == '__main__':
-    dataset = get_dataset(r"H:\cifar10_64\test", (64, 64))
+def main():
+    dataset = build_dataset(r"H:\cifar10_64\test", (64, 64))
     image, classes = dataset[random.randint(0, len(dataset))]
-    cv2.imshow("qwe", image.permute(1, 2, 0).numpy() * 0.5 + 0.5)
-    cv2.waitKey(0)
     print(classes)
+    cv2.imshow("Image", image.permute(1, 2, 0).numpy() * 0.5 + 0.5)
+    cv2.waitKey(0)
+
+
+
+if __name__ == '__main__':
+    main()
