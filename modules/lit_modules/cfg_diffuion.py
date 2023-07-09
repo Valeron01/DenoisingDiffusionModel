@@ -28,7 +28,7 @@ class CFGDiffusion(pl.LightningModule):
         self.model = UNet(num_classes, n_features_list, use_attention_list, embedding_dim)
         self.ema_model = ema_pytorch.EMA(
             self.model, beta=ema_beta, update_after_step=ema_update_after_step, update_every=ema_update_every
-        ).requires_grad_(False)
+        )
         self.diffusion = modules.diffusion.Diffusion(num_steps)
 
         self.save_hyperparameters()
@@ -39,12 +39,13 @@ class CFGDiffusion(pl.LightningModule):
     def training_step(self, batch, *args, **kwargs):
         images, classes = batch
 
-        t = torch.randint(0, self.num_classes, size=(images.shape[0])).to(images.device)
+        t = torch.randint(0, self.num_classes, size=(images.shape[0],)).to(images.device)
         noised_images, noise = self.diffusion.noise_images(images, t)
+
         predicted_noise = self.model.forward(noised_images, t, classes, class_drop_prob=self.class_drop_prob)
 
         loss = nn.functional.mse_loss(predicted_noise, noise)
 
         self.ema_model.update()
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
