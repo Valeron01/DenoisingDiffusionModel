@@ -3,7 +3,6 @@ import typing
 import einops
 import torch
 from torch import nn
-from tqdm import trange
 
 
 class SinusoidalPosEmb(nn.Module):
@@ -225,9 +224,18 @@ class UNet(nn.Module):
 
 
 if __name__ == '__main__':
-    unet = UNet(num_classes=10, use_attention_list=(True, True, True)).cuda()
+    unet = UNet(
+        num_classes=10,
+        n_features_list=(32, 64, 128, 256, 512),
+        use_attention_list=(False, False, True, True, True)
+    ).cuda()
 
-    noise = torch.randn(8, 3, 64, 64).cuda()
+    total_params = 0
+    for param in unet.parameters():
+        total_params += param.numel()
+    print(f"Total params is: {total_params / 1e6}")
+
+    noise = torch.randn(8, 3, 256, 256).cuda()
     times = torch.randint(0, 1000, (noise.shape[0],)).cuda()
     classes = torch.randint(0, 10, (noise.shape[0],)).cuda()
     res = unet(noise, times, classes, class_drop_prob=0.5)
