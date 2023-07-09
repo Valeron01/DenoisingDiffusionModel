@@ -2,3 +2,5 @@ einops
 torch
 ema-pytorch
 tqdm
+albumentations
+numpy
