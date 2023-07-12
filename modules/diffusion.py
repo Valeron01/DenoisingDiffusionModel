@@ -19,7 +19,7 @@ def cosine_beta_schedule(num_steps, s=0.008):
 
 
 class Diffusion(nn.Module):
-    def __init__(self, num_steps: int = 1000, num_sample_steps: int = 150, ddim_sampling_eta=1.,):
+    def __init__(self, num_steps: int = 1000, num_sample_steps: int = 250, ddim_sampling_eta=1.,):
         super().__init__()
 
         self.num_sample_steps = num_sample_steps
@@ -42,6 +42,7 @@ class Diffusion(nn.Module):
     @torch.no_grad()
     def sample(self, model, x0, classes, cond_scale=6., rescaled_phi=0.7, return_history: bool = False):
         assert x0.shape[0] == classes.shape[0]
+        model = model.eval()
 
         times = torch.linspace(-1, self.num_steps - 1,
                                steps=self.num_sample_steps + 1)  # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
