@@ -28,7 +28,8 @@ def main():
 
     pil_images = [Image.fromarray(image) for image in images]
     pil_images = pil_images + [pil_images[-1]] * 10
-    pil_images[0].save("./result.gif", save_all=True, append_images=pil_images[1:], duration=100, lossless=True)
+    pil_images = pil_images[::5]
+    pil_images[0].save("./result.gif", save_all=True, append_images=pil_images[1:], duration=500, lossless=True)
 
 
 if __name__ == '__main__':

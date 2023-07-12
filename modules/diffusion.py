@@ -49,7 +49,7 @@ class Diffusion(nn.Module):
         times = list(reversed(times.int().tolist()))
         time_pairs = list(zip(times[:-1], times[1:]))  # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
 
-        sqrt_recip_alphas_cumprod = torch.sqrt(1 / self.alpha_hat)
+        sqrt_recip_alphas_cumprod = torch.sqrt(1 / self.alpha_hat)  # TODO: Understand math behind this
         sqrt_recipm1_alphas_cumprod = torch.sqrt(1 / self.alpha_hat - 1)
         history = [x0]
         xt = x0
