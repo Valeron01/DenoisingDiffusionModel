@@ -2,7 +2,7 @@ import math
 
 import torch
 from torch import nn
-from tqdm import trange
+from tqdm import trange, tqdm
 
 
 def cosine_beta_schedule(num_steps, s=0.008):
@@ -19,8 +19,11 @@ def cosine_beta_schedule(num_steps, s=0.008):
 
 
 class Diffusion(nn.Module):
-    def __init__(self, num_steps: int = 1000):
+    def __init__(self, num_steps: int = 1000, num_sample_steps: int = 100, ddim_sampling_eta=1.,):
         super().__init__()
+
+        self.num_sample_steps = num_sample_steps
+        self.ddim_sampling_eta = ddim_sampling_eta
 
         betas = cosine_beta_schedule(num_steps)
         alphas = 1 - betas
@@ -36,24 +39,47 @@ class Diffusion(nn.Module):
 
         return noised_images, noise
 
-    def sample(self, model, noises, classes):
-        assert noises.shape[0] == classes.shape[0]
-        betas = cosine_beta_schedule(self.num_steps).to(noises.device)
-        alphas = 1 - betas
-        alpha_hat = torch.cumprod(alphas, 0)
+    @torch.no_grad()
+    def sample(self, model, x0, classes, cond_scale=6., rescaled_phi=0.7):
+        assert x0.shape[0] == classes.shape[0]
 
-        with torch.no_grad():
-            for i in trange(self.num_steps - 1, 0, -1):
-                t = torch.full([classes.shape[0]], i, device=classes.device, dtype=torch.long)
-                predicted_noise = model(noises, t, classes)
+        times = torch.linspace(-1, self.num_steps - 1,
+                               steps=self.num_sample_steps + 1)  # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
+        times = list(reversed(times.int().tolist()))
+        time_pairs = list(zip(times[:-1], times[1:]))  # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
 
-                epsilon = torch.randn_like(noises) if i > 1 else 0
+        sqrt_recip_alphas_cumprod = torch.sqrt(1 / self.alpha_hat)
+        sqrt_recipm1_alphas_cumprod = torch.sqrt(1 / self.alpha_hat - 1)
 
-                noises = 1 / torch.sqrt(alphas[i]) * (
-                        noises - ((1 - alphas[i]) / torch.sqrt(1 - alpha_hat[i])) * predicted_noise
-                ) + epsilon * torch.sqrt(betas[i])
+        xt = x0
 
-        return noises
+        for time, time_next in tqdm(time_pairs, desc='sampling loop time step'):
+            current_time = torch.full((x0.shape[0],), time, dtype=torch.long, device=x0.device)
+            predicted_noise = model.forward_with_cond_scale(xt, current_time, classes, cond_scale=cond_scale, rescaled_phi=rescaled_phi)
+            predicted_x_start = xt * sqrt_recip_alphas_cumprod[time] - predicted_noise * sqrt_recipm1_alphas_cumprod[time]
+            predicted_x_start = torch.clip(predicted_x_start, -1, 1)
+
+            if time_next < 0:
+                xt = predicted_x_start
+                continue
+
+            alpha = self.alpha_hat[time]
+            alpha_next = self.alpha_hat[time_next]
+
+            sigma = self.ddim_sampling_eta * ((1 - alpha / alpha_next) * (1 - alpha_next) / (1 - alpha)).sqrt()
+            c = (1 - alpha_next - sigma ** 2).sqrt()
+
+            noise = torch.randn_like(xt)
+
+            xt = predicted_x_start * alpha_next.sqrt() + c * predicted_noise + sigma * noise
+
+        return xt * 0.5 + 0.5
+
+
+
+
+
+
 
 
 

@@ -38,7 +38,10 @@ def main():
         log_every_n_steps=20
     )
 
-    trainer.fit(model, train_loader)
+    trainer.fit(
+        model, train_loader,
+        ckpt_path=r"C:\Users\elect\PycharmProjects\DenoisingDiffusionModel\lightning\checkpoints\run_30\epoch=25-step=20332.ckpt"
+    )
 
 
 if __name__ == '__main__':

@@ -24,6 +24,7 @@ class CFGDiffusion(pl.LightningModule):
             lr=3e-4
     ):
         super().__init__()
+        self.num_steps = num_steps
         self.lr = lr
         self.class_drop_prob = class_drop_prob
         self.num_classes = num_classes
@@ -41,10 +42,10 @@ class CFGDiffusion(pl.LightningModule):
     def training_step(self, batch, *args, **kwargs):
         images, classes = batch
 
-        t = torch.randint(0, self.num_classes, size=(images.shape[0],)).to(images.device)
+        t = torch.randint(0, self.num_steps, size=(images.shape[0],)).to(images.device)
         noised_images, noise = self.diffusion.noise_images(images, t)
 
-        predicted_noise = self.model.forward(noised_images, t, classes, class_drop_prob=self.class_drop_prob)
+        predicted_noise = self.model(noised_images, t, classes, class_drop_prob=self.class_drop_prob)
 
         loss = nn.functional.mse_loss(predicted_noise, noise)
 

@@ -1,5 +1,7 @@
 import math
 import typing
+from functools import partial
+
 import einops
 import torch
 from torch import nn
@@ -221,6 +223,29 @@ class UNet(nn.Module):
         return self.final_conv(
             torch.cat([upsample_stage, stem], dim=1)
         )
+
+    def forward_with_cond_scale(
+            self,
+            *args,
+            cond_scale=1.,
+            rescaled_phi=0.,
+            **kwargs
+    ):
+        logits = self.forward(*args, class_drop_prob=0., **kwargs)
+
+        if cond_scale == 1:
+            return logits
+
+        null_logits = self.forward(*args, class_drop_prob=1., **kwargs)
+        scaled_logits = null_logits + (logits - null_logits) * cond_scale
+
+        if rescaled_phi == 0.:
+            return scaled_logits
+
+        std_fn = partial(torch.std, dim=tuple(range(1, scaled_logits.ndim)), keepdim=True)
+        rescaled_logits = scaled_logits * (std_fn(logits) / std_fn(scaled_logits))
+
+        return rescaled_logits * rescaled_phi + scaled_logits * (1. - rescaled_phi)
 
 
 if __name__ == '__main__':
