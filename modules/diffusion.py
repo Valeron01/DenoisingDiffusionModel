@@ -53,7 +53,7 @@ class Diffusion(nn.Module):
         history = [x0]
         xt = x0
 
-        for time, time_next in tqdm(time_pairs, desc='sampling loop time step'):
+        for time, time_next in tqdm(time_pairs, desc="Predicting images"):
             current_time = torch.full((x0.shape[0],), time, dtype=torch.long, device=x0.device)
             predicted_noise = model.forward_with_cond_scale(xt, current_time, classes, cond_scale=cond_scale, rescaled_phi=rescaled_phi)
             predicted_x_start = xt * sqrt_recip_alphas_cumprod[time] - predicted_noise * sqrt_recipm1_alphas_cumprod[time]
