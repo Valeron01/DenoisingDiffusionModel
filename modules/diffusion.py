@@ -61,6 +61,7 @@ class Diffusion(nn.Module):
 
             if time_next < 0:
                 xt = predicted_x_start
+                history.append(xt)
                 continue
 
             alpha = self.alpha_hat[time]
