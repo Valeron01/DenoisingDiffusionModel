@@ -19,7 +19,7 @@ def cosine_beta_schedule(num_steps, s=0.008):
 
 
 class Diffusion(nn.Module):
-    def __init__(self, num_steps: int = 1000, num_sample_steps: int = 100, ddim_sampling_eta=1.,):
+    def __init__(self, num_steps: int = 1000, num_sample_steps: int = 150, ddim_sampling_eta=1.,):
         super().__init__()
 
         self.num_sample_steps = num_sample_steps
@@ -40,7 +40,7 @@ class Diffusion(nn.Module):
         return noised_images, noise
 
     @torch.no_grad()
-    def sample(self, model, x0, classes, cond_scale=6., rescaled_phi=0.7):
+    def sample(self, model, x0, classes, cond_scale=6., rescaled_phi=0.7, return_history: bool = False):
         assert x0.shape[0] == classes.shape[0]
 
         times = torch.linspace(-1, self.num_steps - 1,
@@ -50,7 +50,7 @@ class Diffusion(nn.Module):
 
         sqrt_recip_alphas_cumprod = torch.sqrt(1 / self.alpha_hat)
         sqrt_recipm1_alphas_cumprod = torch.sqrt(1 / self.alpha_hat - 1)
-
+        history = [x0]
         xt = x0
 
         for time, time_next in tqdm(time_pairs, desc='sampling loop time step'):
@@ -72,7 +72,10 @@ class Diffusion(nn.Module):
             noise = torch.randn_like(xt)
 
             xt = predicted_x_start * alpha_next.sqrt() + c * predicted_noise + sigma * noise
+            history.append(xt)
 
+        if return_history:
+            return torch.cat([i[None] for i in history], dim=0) * 0.5 + 0.5
         return xt * 0.5 + 0.5
 
 
