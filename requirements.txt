@@ -4,3 +4,4 @@ ema-pytorch
 tqdm
 albumentations
 numpy
+pillow
